@@ -161,7 +161,7 @@ fn draw_particle_options(
         };
         let surface = font
             .render(&text)
-            .blended(Color::RGBA(255, 255, 255, 255))
+            .blended(particle_type.color())
             .map_err(|e| e.to_string())
             .unwrap();
         let texture = surface
