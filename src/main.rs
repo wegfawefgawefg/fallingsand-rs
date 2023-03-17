@@ -1,11 +1,11 @@
 use element::Element;
 use enum_iterator::{first, last, next, previous};
 use particle::Particle;
+use render::render_particles;
+
 // use rand::Rng;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
 use sdl2::render::{Texture, TextureCreator};
 
 use settings::{HEIGHT, WIDTH, WINDOW_HEIGHT, WINDOW_WIDTH};
@@ -160,36 +160,7 @@ fn main() {
             update(particle, &mut grid);
         }
 
-        canvas
-            .with_texture_canvas(&mut intermediary_canvas, |texture_canvas| {
-                texture_canvas.set_draw_color(Color::RGB(0, 0, 0));
-                texture_canvas.clear();
-
-                // Draw particles
-                for particle in &particles {
-                    texture_canvas.set_draw_color(particle.color());
-                    let _ = texture_canvas.fill_rect(Rect::new(
-                        particle.x as i32,
-                        particle.y as i32,
-                        1,
-                        1,
-                    ));
-                }
-            })
-            .unwrap();
-
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        canvas.clear();
-
-        // Draw the intermediary canvas onto the main canvas, scaled to the window size
-        canvas
-            .copy(
-                &intermediary_canvas,
-                None,
-                Some(Rect::new(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT)),
-            )
-            .unwrap();
-
+        render_particles(&mut canvas, &mut intermediary_canvas, &particles);
         draw_particle_count(&mut canvas, &small_font, &particles, &texture_creator);
         draw_particle_options(
             &mut canvas,
@@ -198,7 +169,6 @@ fn main() {
             &current_element,
             &texture_creator,
         );
-
         canvas.present();
         std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
