@@ -1,6 +1,7 @@
 use element::Element;
 use enum_iterator::{first, last, next, previous};
 use particle::Particle;
+use particle_behaviour::step_particle;
 use render::render_particles;
 
 // use rand::Rng;
@@ -13,6 +14,7 @@ use ui::{draw_particle_count, draw_particle_options};
 
 mod element;
 mod particle;
+mod particle_behaviour;
 mod render;
 mod settings;
 mod ui;
@@ -35,21 +37,6 @@ fn spawn_particle(
     *next_particle_id += 1;
     particles.push(particle);
     grid[y as usize][x as usize] = Some(particle.id as usize);
-}
-
-fn update(p: &mut Particle, _grid: &mut Vec<Vec<Option<usize>>>) {
-    p.age += 1;
-    match p.element {
-        Element::Sand => { /* Update sand behavior */ }
-        Element::Water => { /* Update water behavior */ }
-        Element::Gas => { /* Update gas behavior */ }
-        Element::Fire => { /* Update fire behavior */ }
-        Element::Smoke => { /* Update smoke behavior */ }
-        Element::Steam => { /* Update steam behavior */ }
-        Element::Wood => { /* Update wood behavior */ }
-        Element::Wall => { /* Update wall behavior */ }
-        Element::Ice => { /* Update ice behavior */ }
-    }
 }
 
 fn main() {
@@ -100,6 +87,10 @@ fn main() {
             match event {
                 Event::Quit { .. }
                 | Event::KeyDown {
+                    keycode: Some(Keycode::Q),
+                    ..
+                } => break 'running,
+                Event::KeyDown {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
@@ -155,11 +146,12 @@ fn main() {
             }
         }
 
-        // Update particles
+        // step particles
         for particle in &mut particles {
-            update(particle, &mut grid);
+            step_particle(particle, &mut grid);
         }
 
+        // render zone
         render_particles(&mut canvas, &mut intermediary_canvas, &particles);
         draw_particle_count(&mut canvas, &small_font, &particles, &texture_creator);
         draw_particle_options(
@@ -169,7 +161,8 @@ fn main() {
             &current_element,
             &texture_creator,
         );
+
         canvas.present();
-        std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 288));
     }
 }
