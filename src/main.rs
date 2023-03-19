@@ -1,7 +1,7 @@
 use element::Element;
 use enum_iterator::{first, last, next, previous};
-use particle::Particle;
-use particle_behaviour::step_particle;
+use particle::{spawn_particle, Particle};
+use particle_behaviour::step_particles;
 use render::render_particles;
 
 // use rand::Rng;
@@ -20,24 +20,6 @@ mod settings;
 mod ui;
 
 use std::time::Duration;
-
-fn spawn_particle(
-    x: i32,
-    y: i32,
-    element: Element,
-    particles: &mut Vec<Particle>,
-    next_particle_id: &mut u32,
-    grid: &mut Vec<Vec<Option<usize>>>,
-) {
-    if let Some(particle_id) = grid[y as usize][x as usize] {
-        particles.retain(|p| p.id != particle_id as u32);
-    }
-
-    let particle = Particle::new(x, y, element, *next_particle_id);
-    *next_particle_id += 1;
-    particles.push(particle);
-    grid[y as usize][x as usize] = Some(particle.id as usize);
-}
 
 fn main() {
     // Initialize SDL2 boilerplate
@@ -79,6 +61,7 @@ fn main() {
     //  state
     let mut next_particle_id = 0;
     let mut particles: Vec<Particle> = Vec::new();
+    let mut new_particles: Vec<Particle> = Vec::new();
     let mut grid: Vec<Vec<Option<usize>>> = vec![vec![None; WIDTH as usize]; HEIGHT as usize];
     let mut current_element = first::<Element>().unwrap();
 
@@ -146,9 +129,25 @@ fn main() {
             }
         }
 
-        // step particles
-        for particle in &mut particles {
-            step_particle(particle, &mut grid);
+        step_particles(
+            &mut particles,
+            &mut grid,
+            &mut next_particle_id,
+            &mut new_particles,
+        );
+
+        // move new particles into the main particle list
+        particles.append(&mut new_particles);
+        new_particles = Vec::new();
+
+        // remove dead particles
+        {
+            for particle in &particles {
+                if particle.remove {
+                    grid[particle.y as usize][particle.x as usize] = None;
+                }
+            }
+            particles.retain(|p| p.remove == false);
         }
 
         // render zone

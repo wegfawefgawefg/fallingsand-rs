@@ -9,6 +9,7 @@ pub struct Particle {
     pub y: i32,
     pub element: Element,
     pub age: i32,
+    pub remove: bool,
 }
 
 impl Particle {
@@ -19,6 +20,7 @@ impl Particle {
             y,
             element,
             age: 0,
+            remove: false,
         }
     }
 
