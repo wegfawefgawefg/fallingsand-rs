@@ -4,14 +4,15 @@
     to chain together conditional particle behaviours.
     Generally I would use if/elseif/else but this "short-circuiting" pattern is particularly clean in this code.
 
-    add gel:
+    TODO:
+        - try to add a high viscosity gel
+        - wood
+    //NOTE: try the behaviour as struct for encapsulating grid and particle
+    CONSIDER:
+        -
 */
 
-use crate::{
-    element::Element,
-    particle::Particle,
-    settings::{HEIGHT, WIDTH},
-};
+use crate::{element::Element, grid::Grid, particle::Particle};
 use rand::Rng;
 
 const DIRECTIONS: [(i32, i32); 8] = [
@@ -25,147 +26,218 @@ const DIRECTIONS: [(i32, i32); 8] = [
     (1, 1),
 ];
 
-pub fn spawn_particle(
-    x: i32,
-    y: i32,
-    element: Element,
-    particles: &mut Vec<Particle>,
-    next_particle_id: &mut u32,
-    grid: &mut Vec<Vec<Option<usize>>>,
-) {
-    if !pos_in_world(x, y) || grid[y as usize][x as usize].is_some() {
-        return;
-    }
-
-    let particle = Particle::new(x, y, element, *next_particle_id);
-    *next_particle_id += 1;
-    particles.push(particle);
-    grid[y as usize][x as usize] = Some(particle.id as usize);
+pub fn on_floor(y: i32) -> bool {
+    y == Grid::HEIGHT - 1
 }
 
-pub fn pos_in_world(x: i32, y: i32) -> bool {
-    x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT
+pub fn on_ceiling(y: i32) -> bool {
+    y == 0
 }
 
-pub fn on_floor(p: &Particle) -> bool {
-    p.y == HEIGHT - 1
-}
-
-pub fn pmove(p: &mut Particle, grid: &mut Vec<Vec<Option<usize>>>, x: i32, y: i32) {
-    grid[p.y as usize][p.x as usize] = None;
-    p.x = x;
-    p.y = y;
-    grid[p.y as usize][p.x as usize] = Some(p.id as usize);
-}
-
-pub fn ptry_move(p: &mut Particle, grid: &mut Vec<Vec<Option<usize>>>, x: i32, y: i32) -> bool {
-    if pos_in_world(x, y) && grid[y as usize][x as usize].is_none() {
-        pmove(p, grid, x, y);
-        true
-    } else {
-        false
-    }
-}
-
-/// try to move down, if cant, try to move left or right
-pub fn ptry_fall(p: &mut Particle, grid: &mut Vec<Vec<Option<usize>>>) -> bool {
-    on_floor(p) || ptry_move(p, grid, p.x, p.y + 1) || {
-        let mut rng = rand::thread_rng();
-        let direction = rng.gen_range(0..2);
-        if direction == 0 {
-            ptry_move(p, grid, p.x - 1, p.y + 1)
-        } else {
-            ptry_move(p, grid, p.x + 1, p.y + 1)
+pub fn set_if_empty(grid: &mut Grid, x: i32, y: i32, p: Particle) {
+    if let Some(tp) = grid.get(x, y) {
+        if tp.element == Element::Air {
+            grid.set(x, y, p);
         }
     }
 }
 
-/// ptry_fall but up
-pub fn ptry_fall_up(p: &mut Particle, grid: &mut Vec<Vec<Option<usize>>>) -> bool {
-    on_floor(p) || ptry_move(p, grid, p.x, p.y - 1) || {
+pub fn try_move(grid: &mut Grid, x: i32, y: i32, new_x: i32, new_y: i32) -> bool {
+    if let (Some(p), Some(tp)) = (grid.get(x, y), grid.get(new_x, new_y)) {
+        // if tp is wall, dont move
+        if tp.element == Element::Wall {
+            return false;
+        } else if tp.element == Element::Air {
+            grid.swap(x, y, new_x, new_y);
+            return true;
+        }
+
+        if y == new_y {
+            if p.density() >= tp.density() {
+                grid.swap(x, y, new_x, new_y);
+                return true;
+            }
+        } else if new_y > y {
+            if p.density() > tp.density() {
+                grid.swap(x, y, new_x, new_y);
+                return true;
+            }
+        } else if new_y < y {
+            if p.density() < tp.density() {
+                grid.swap(x, y, new_x, new_y);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Try to move down, if cant, try to move left-down or right-down.
+pub fn fall(grid: &mut Grid, x: i32, y: i32) -> bool {
+    on_floor(y) || try_move(grid, x, y, x, y + 1) || {
         let mut rng = rand::thread_rng();
         let direction = rng.gen_range(0..2);
         if direction == 0 {
-            ptry_move(p, grid, p.x - 1, p.y + 1)
+            try_move(grid, x, y, x - 1, y + 1)
         } else {
-            ptry_move(p, grid, p.x + 1, p.y + 1)
+            try_move(grid, x, y, x + 1, y + 1)
         }
     }
 }
 
-/// like try fall but just for left right
-pub fn ptry_jitter_lr(p: &mut Particle, grid: &mut Vec<Vec<Option<usize>>>) -> bool {
+/// Like fall but up instead of down.
+pub fn fall_up(grid: &mut Grid, x: i32, y: i32) -> bool {
+    on_ceiling(y) || try_move(grid, x, y, x, y - 1) || {
+        let mut rng = rand::thread_rng();
+        let direction = rng.gen_range(0..2);
+        if direction == 0 {
+            try_move(grid, x, y, x - 1, y - 1)
+        } else {
+            try_move(grid, x, y, x + 1, y - 1)
+        }
+    }
+}
+
+/// Like try fall but just for left right.
+pub fn jitter_left_right(grid: &mut Grid, x: i32, y: i32) -> bool {
     let mut rng = rand::thread_rng();
     let direction = rng.gen_range(0..2);
     if direction == 0 {
-        ptry_move(p, grid, p.x - 1, p.y)
+        try_move(grid, x, y, x - 1, y)
     } else {
-        ptry_move(p, grid, p.x + 1, p.y)
+        try_move(grid, x, y, x + 1, y)
     }
 }
 
-/// same as try_jitter but in all 8 directions
-pub fn ptry_expandjitter(p: &mut Particle, grid: &mut Vec<Vec<Option<usize>>>) -> bool {
+/// Same as try_jitter but in all 8 directions.
+pub fn expand_jitter(grid: &mut Grid, x: i32, y: i32) -> bool {
     let mut rng = rand::thread_rng();
     let direction = rng.gen_range(0..8);
-    let (x, y) = DIRECTIONS[direction];
-    ptry_move(p, grid, p.x + x, p.y + y)
+    let (dx, dy) = DIRECTIONS[direction];
+    try_move(grid, x, y, x + dx, y + dy)
 }
 
-pub fn step_particles(
-    particles: &mut Vec<Particle>,
-    grid: &mut Vec<Vec<Option<usize>>>,
-    next_particle_id: &mut u32,
-    new_particles: &mut Vec<Particle>,
-) {
-    for p in particles.iter_mut() {
-        p.age += 1;
-        match p.element {
-            Element::Sand => {
-                /* sand tries to go down, if it cant, it randomly goes left or right */
-                ptry_fall(p, grid);
+/// Check for nearby collision.
+pub fn check_nearby_for(grid: &mut Grid, x: i32, y: i32, element: Element) -> bool {
+    /* this function can only check for presence, but we may want to also modify the found one, or return it to read more properties in
+    a different version of the find function */
+    for (dx, dy) in DIRECTIONS.iter() {
+        let cx = x + dx;
+        let cy = y + dy;
+        let p = grid.get(cx, cy);
+        if let Some(p) = p {
+            if p.element == element {
+                return true;
             }
-            Element::Water => {
-                /* water tries to fall, if it cant, randomly try left and right */
-                let _ = ptry_fall(p, grid) || ptry_jitter_lr(p, grid);
-            }
-            Element::Gas => {
-                /* Update gas behavior */
-                let _ = ptry_expandjitter(p, grid);
-            }
-            Element::Fire => {
-                /* Update fire behavior */
-                let _ = ptry_move(p, grid, p.x, p.y - 1);
-                if p.age > 8 {
-                    p.age = -1;
-                    p.remove = true;
-                }
-                let mut rng = rand::thread_rng();
-                let chance = rng.gen_range(0..4);
-                if chance == 0 {
-                    // ptry_spawn(grid, p.x, p.y - 1, Element::Smoke, &mut next_particle_id);
-                    spawn_particle(
-                        p.x,
-                        p.y - 1,
-                        Element::Smoke,
-                        new_particles,
-                        next_particle_id,
-                        grid,
-                    );
-                }
-            }
-            Element::Smoke => {
-                /* Update smoke behavior */
-                let _ = ptry_fall_up(p, grid);
-                if p.age > 120 {
-                    p.age = -1;
-                    p.remove = true;
-                }
-            }
-            Element::Steam => { /* Update steam behavior */ }
-            Element::Wood => { /* Update wood behavior */ }
-            Element::Wall => { /* Update wall behavior */ }
-            Element::Ice => { /* Update ice behavior */ }
         }
     }
+    false
+}
+
+pub fn step_particles(grid: &mut Grid, frame_clock: u32) {
+    for y in 0..Grid::HEIGHT {
+        for x in 0..Grid::WIDTH {
+            {
+                let p = grid.get_mut(x, y);
+                if let Some(p) = p {
+                    if p.last_ticked == frame_clock {
+                        continue;
+                    } else {
+                        if p.lifetime() > 0 && p.age > p.lifetime() {
+                            grid.set(x, y, Particle::new(Element::Air, frame_clock));
+                            continue;
+                        }
+                        p.last_ticked = frame_clock;
+                        p.age += 1;
+                    }
+                }
+                if let Some(p) = grid.get(x, y) {
+                    match p.element {
+                        Element::Air => { /*  do nothing */ }
+                        Element::Sand => {
+                            fall(grid, x, y);
+                        }
+                        Element::Oil => {
+                            let _ = fall(grid, x, y) || jitter_left_right(grid, x, y);
+                        }
+                        Element::Water => {
+                            if check_nearby_for(grid, x, y, Element::Fire)
+                                || check_nearby_for(grid, x, y, Element::Lava)
+                            {
+                                grid.set(x, y, Particle::new(Element::Steam, frame_clock));
+                            }
+                            let _ = fall(grid, x, y) || jitter_left_right(grid, x, y);
+                        }
+                        Element::Fire => {
+                            let _ = fall_up(grid, x, y) || jitter_left_right(grid, x, y);
+                            let mut rng = rand::thread_rng();
+                            let chance = rng.gen_range(0..16);
+                            if chance == 0 {
+                                grid.set(x, y, Particle::new(Element::Smoke, frame_clock));
+                            }
+                        }
+                        Element::Smoke => {
+                            let _ = fall_up(grid, x, y) || jitter_left_right(grid, x, y);
+                        }
+                        Element::Steam => {
+                            if check_nearby_for(grid, x, y, Element::Ice) {
+                                grid.set(x, y, Particle::new(Element::Water, frame_clock));
+                            }
+                            let _ = fall_up(grid, x, y) || jitter_left_right(grid, x, y);
+                        }
+                        Element::Wood => {
+                            // if check_nearby_for(
+                            //     Element::Fire,
+                            //     p,
+                            //     &particles[0..i],
+                            //     &particles[i + 1..],
+                            //     grid,
+                            // ) {
+                            //     let p = &mut particles[i];
+                            //     p.remove = true;
+                            //     try_spawn_particle(
+                            //         p.x,
+                            //         p.y,
+                            //         Element::Fire,
+                            //         new_particles,
+                            //         grid,
+                            //         next_particle_id,
+                            //     );
+                            // }
+                        }
+                        Element::Wall => { /* Update wall behavior */ }
+                        Element::Ice => {
+                            fall(grid, x, y);
+                        }
+                        Element::Lava => {
+                            let _ = fall(grid, x, y) || jitter_left_right(grid, x, y);
+                            let mut rng = rand::thread_rng();
+                            let chance = rng.gen_range(0..16);
+                            if chance == 0 {
+                                set_if_empty(
+                                    grid,
+                                    x,
+                                    y - 1,
+                                    Particle::new(Element::Fire, frame_clock),
+                                );
+                            }
+                        }
+                    }
+                    let p = grid.get_mut(x, y);
+                    if let Some(p) = p {
+                        // p.age += 1;
+                        // if p.lifetime() > 0 && p.age >= p.lifetime() {
+                        //     p.remove = true;
+                        // }
+                    }
+                }
+            }
+        }
+    }
+
+    //  implement aging generically
+    // p.age += 1;
+    // if p.lifetime() > 0 && p.age >= p.lifetime() {
+    //     p.remove = true;
+    // }
 }

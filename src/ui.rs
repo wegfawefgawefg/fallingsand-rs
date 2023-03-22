@@ -8,7 +8,11 @@ use sdl2::{
 
 use sdl2::video::Window;
 
-use crate::{element::Element, particle::Particle, settings::WINDOW_WIDTH};
+use crate::{
+    element::Element,
+    particle::Particle,
+    settings::{MAX_PARTICLES, WINDOW_WIDTH},
+};
 
 // draw_particle_count
 // should draw the total number of particles in the top right
@@ -18,7 +22,7 @@ pub fn draw_particle_count(
     particles: &Vec<Particle>,
     texture_creator: &TextureCreator<sdl2::video::WindowContext>,
 ) {
-    let text = format!("Particles: {}", particles.len());
+    let text = format!("Particles: {} / {}", particles.len(), MAX_PARTICLES);
     let surface = font
         .render(&text)
         .blended(Color::RGBA(255, 255, 255, 255))
@@ -43,15 +47,22 @@ pub fn draw_particle_options(
     let mut y = 10;
     let elements: Vec<Element> = all::<Element>().collect::<Vec<_>>();
     for element in elements {
+        // skip air as an option
         let text = format!("{}", element);
         let font = if element == *current_element {
             large_font
         } else {
             small_font
         };
+        let color = if element == Element::Air {
+            Color::RGBA(255, 255, 255, 255)
+        } else {
+            element.color()
+        };
+
         let surface = font
             .render(&text)
-            .blended(element.color())
+            .blended(color)
             .map_err(|e| e.to_string())
             .unwrap();
         let texture = surface

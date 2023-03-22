@@ -1,6 +1,7 @@
 use element::Element;
 use enum_iterator::{first, last, next, previous};
-use particle::{spawn_particle, Particle};
+use grid::Grid;
+use particle::Particle;
 use particle_behaviour::step_particles;
 use render::render_particles;
 
@@ -9,10 +10,11 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::render::{Texture, TextureCreator};
 
-use settings::{HEIGHT, WIDTH, WINDOW_HEIGHT, WINDOW_WIDTH};
+use settings::{WINDOW_HEIGHT, WINDOW_WIDTH};
 use ui::{draw_particle_count, draw_particle_options};
 
 mod element;
+mod grid;
 mod particle;
 mod particle_behaviour;
 mod render;
@@ -40,7 +42,7 @@ fn main() {
     //  //  makes the rendering much faster
     let texture_creator: TextureCreator<_> = canvas.texture_creator();
     let mut intermediary_canvas: Texture = texture_creator
-        .create_texture_target(None, WIDTH as u32, HEIGHT as u32)
+        .create_texture_target(None, Grid::WIDTH as u32, Grid::HEIGHT as u32)
         .unwrap();
 
     // Asset loading
@@ -59,10 +61,8 @@ fn main() {
         .unwrap();
 
     //  state
-    let mut next_particle_id = 0;
-    let mut particles: Vec<Particle> = Vec::new();
-    let mut new_particles: Vec<Particle> = Vec::new();
-    let mut grid: Vec<Vec<Option<usize>>> = vec![vec![None; WIDTH as usize]; HEIGHT as usize];
+    let mut frame_clock = 0;
+    let mut grid = Grid::new();
     let mut current_element = first::<Element>().unwrap();
 
     'running: loop {
@@ -111,17 +111,17 @@ fn main() {
                     xrel: _,
                     yrel: _,
                 } => {
-                    let x = x * WIDTH as i32 / WINDOW_WIDTH as i32;
-                    let y = y * HEIGHT as i32 / WINDOW_HEIGHT as i32;
+                    let x = x * Grid::WIDTH as i32 / WINDOW_WIDTH as i32;
+                    let y = y * Grid::HEIGHT as i32 / WINDOW_HEIGHT as i32;
                     let is_mouse_down = mousestate.left();
                     if is_mouse_down {
-                        spawn_particle(
+                        grid.set(
                             x,
                             y,
-                            current_element,
-                            &mut particles,
-                            &mut next_particle_id,
-                            &mut grid,
+                            Particle {
+                                element: current_element,
+                                ..Default::default()
+                            },
                         );
                     }
                 }
@@ -129,30 +129,12 @@ fn main() {
             }
         }
 
-        step_particles(
-            &mut particles,
-            &mut grid,
-            &mut next_particle_id,
-            &mut new_particles,
-        );
-
-        // move new particles into the main particle list
-        particles.append(&mut new_particles);
-        new_particles = Vec::new();
-
-        // remove dead particles
-        {
-            for particle in &particles {
-                if particle.remove {
-                    grid[particle.y as usize][particle.x as usize] = None;
-                }
-            }
-            particles.retain(|p| p.remove == false);
-        }
+        // update zone
+        step_particles(&mut grid, frame_clock);
 
         // render zone
-        render_particles(&mut canvas, &mut intermediary_canvas, &particles);
-        draw_particle_count(&mut canvas, &small_font, &particles, &texture_creator);
+        render_particles(&mut canvas, &mut intermediary_canvas, &grid);
+        // draw_particle_count(&mut canvas, &small_font, &particles, &texture_creator);
         draw_particle_options(
             &mut canvas,
             &small_font,
@@ -162,6 +144,9 @@ fn main() {
         );
 
         canvas.present();
-        std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 288));
+        // std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
+        std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 144));
+
+        frame_clock += 1;
     }
 }
